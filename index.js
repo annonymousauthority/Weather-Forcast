@@ -8,6 +8,7 @@ const admin = require('firebase-admin');
 admin.initializeApp();
 const token = process.env['API_KEY'];
 const https = require('https');
+const { write } = require('fs');
 var json = "";
 
 exports.addLocation = functions.https.onRequest(async (req, res) => {
@@ -20,6 +21,7 @@ exports.addLocation = functions.https.onRequest(async (req, res) => {
     var temp = [];
     var maxTemp = [];
     var minTemp = [];
+    var resultJson
    
     var todayDate = new Date().toISOString().slice(0, 10);
     const original = req.query.location;
@@ -54,11 +56,12 @@ exports.addLocation = functions.https.onRequest(async (req, res) => {
             // console.log(todayDate)
             // console.log(minTemp,maxTemp)
             json = {
-              "date" : todayDate,
+              "date" :todayDate,
               "min":minTemp,
               "max":maxTemp
             }
-            admin.firestore().collection("location").doc(original).collection(todayDate).add({"date": todayDate, "min": minTemp, "max": maxTemp, location: original }, {merge: true})
+            const writeResult = admin.firestore().collection("location").doc(original).collection(todayDate).doc(original).set({"date": todayDate, "min": minTemp, "max": maxTemp, location: original }, {merge: true})
+           
           })
         })
         _request.on('error', error => {
@@ -72,36 +75,36 @@ exports.addLocation = functions.https.onRequest(async (req, res) => {
         console.error(error)
       })
       request.end()
-      // const json ={
-      //   "date" : snap.data().date,
-      //   "min-Forcasted": snap.data().min,
-      //   "max-Forcasted": snap.data().max
-      // }
-      var query = [];
+      
+      var query = {};
       var todayDate = new Date().toISOString().slice(0, 10);
-      var forcastRef = admin.firestore().collection("location").doc(original).collection(todayDate)
+      var forcastRef = admin.firestore().collection("location").doc(original).collection(todayDate).doc(original)
       const forcast = await forcastRef.get().then(doc => {
         if (doc.empty) {
           console.log("It's empty")
         }else{
-          doc.docs.forEach((value)=>{
-            // console.log(value.data())
-            query.push(value.data())
-            
-          })
+          query = doc.data()
+          // console.log(query)
         }
       })
       .catch(err => {
         console.log('Error getting document', err);
       });
-      // console.log(query)
-      var json = {
-        "date" : query[0].date,
-        "min-Forcasted": query[0].min,
-        "max-Forcasted":query[0].max
+     
+      if (query != {}) {
+        var resultJson = {
+          "date" : query.date,
+          "min-Forcasted": query.min,
+          "max-Forcasted":query.max
+        }
+        // console.log(query)
+      }else{
+       var resultJson = "Try again"
       }
+      // console.log(query)
+      
     // const writeResult = await admin.firestore().collection("location").doc(original).collection(todayDate).add({location:original});
-    res.json({result: json});
+    res.json({result: resultJson});
 });
 
 // Listens for new messages added to /messages/:documentId/original and creates an
@@ -228,43 +231,32 @@ exports.searchForForcast = functions.https.onRequest(async(req, res) =>{
   var end_date = req.query.end_date;
   var query = [];
   var dateRange = [];
-
-  var checkDates = [start_date, end_date]
-  var earliest = new Date(Math.min.apply(null, checkDates))
-  console.log(earliest)
+  var resultQuery = [];
   // console.log(location, start_date, end_date)
   for(var arr=[],dt=new Date(start_date); dt<=new Date(end_date); dt.setDate(dt.getDate()+1)){
     dateRange.push(new Date(dt).toISOString().slice(0, 10));
   }
   console.log(dateRange[0].toString());
   if (dateRange.length == 1) {
-    var forcastRef =  admin.firestore().collection("location/"+location+"/"+dateRange[0].toString())
+    var forcastRef =  admin.firestore().collection("location/"+location+"/"+dateRange[0].toString()).doc(location)
     const forcast = await forcastRef.get().then(doc => {
-      doc.docs.forEach((value)=>{
-        console.log(value.data())
-        query.push(value.data())
-      })
+      query.push(doc.data())
     })
     .catch(err => {
       console.log('Error getting document', err);
     });
   }else if (dateRange.length > 1) {
     for (let index = 0; index < dateRange.length; index++) {
-      var forcastRef = await admin.firestore().collection("location"+location+dateRange[index].toString()).get().then(function(snapshot) {
+      var forcastRef = await admin.firestore().collection("location"+location+dateRange[index].toString()).doc(location).get().then(function(snapshot) {
           if (snapshot.empty) {
             console.log("snapshot is empty")
           }else{
-            snapshot.docs.forEach(function(element){
-              console.log(element.data)
-              query.push(value.data())
-            })
+            query.push(snapshot.data())
           }
       })
     }
   }else{
     console.log("input the right date range")
   }
-  
-  
-  res.json({result: query[0]})
+  res.json({result: query})
 })
